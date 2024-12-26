@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from pandas_datareader import data as pdr
+import yfinance as yf
 import datetime as dt
 import math
 from sklearn.preprocessing import MinMaxScaler
@@ -14,7 +14,8 @@ import matplotlib.pyplot as plt
 
 def fetch_stock_data(symbol, start_date, end_date):
     try:
-        data = pdr.get_data_yahoo(symbol, start=start_date, end=end_date)
+        ticker = yf.Ticker(symbol)
+        data = ticker.history(start=start_date, end=end_date)
         if data.empty:
             raise ValueError(f"No data found for {symbol}. Please check the stock symbol and try again.")
         return data
@@ -78,64 +79,65 @@ def plot_predictions(actual, predicted, dates, symbol):
     plt.show()
 
 # Main execution
-symbol = input("Enter Stock Symbol (e.g., AAPL for Apple): ")
-start_date = dt.datetime(2010, 1, 1)
-end_date = dt.datetime.now()
+if __name__ == "__main__":
+    symbol = input("Enter Stock Symbol (e.g., AAPL for Apple): ")
+    start_date = dt.datetime(2010, 1, 1)
+    end_date = dt.datetime.now()
 
-# Fetch and prepare data
-data = fetch_stock_data(symbol, start_date, end_date)
-data = add_technical_indicators(data)
-data = data.dropna()  # Remove any NaN values
+    # Fetch and prepare data
+    data = fetch_stock_data(symbol, start_date, end_date)
+    data = add_technical_indicators(data)
+    data = data.dropna()  # Remove any NaN values
 
-features = ['Close', 'Volume', 'SMA20', 'SMA50', 'RSI', 'MACD', 'Signal_Line']
-look_back = 60
-future_steps = 5  # Predicting 5 days into the future
+    features = ['Close', 'Volume', 'SMA20', 'SMA50', 'RSI', 'MACD', 'Signal_Line']
+    look_back = 60
+    future_steps = 5  # Predicting 5 days into the future
 
-X, y, scaler = prepare_data(data[features], look_back, future_steps)
+    X, y, scaler = prepare_data(data[features], look_back, future_steps)
 
-# Split data
-split = int(0.8 * len(X))
-X_train, X_test = X[:split], X[split:]
-y_train, y_test = y[:split], y[split:]
+    # Split data
+    split = int(0.8 * len(X))
+    X_train, X_test = X[:split], X[split:]
+    y_train, y_test = y[:split], y[split:]
 
-# Create and train model
-model = create_model((X.shape[1], X.shape[2]), future_steps)
-early_stopping = EarlyStopping(monitor='val_loss', patience=20, restore_best_weights=True)
+    # Create and train model
+    model = create_model((X.shape[1], X.shape[2]), future_steps)
+    early_stopping = EarlyStopping(monitor='val_loss', patience=20, restore_best_weights=True)
 
-history = model.fit(
-    X_train, y_train,
-    validation_data=(X_test, y_test),
-    epochs=100,
-    batch_size=32,
-    callbacks=[early_stopping],
-    verbose=1
-)
+    history = model.fit(
+        X_train, y_train,
+        validation_data=(X_test, y_test),
+        epochs=100,
+        batch_size=32,
+        callbacks=[early_stopping],
+        verbose=1
+    )
 
-# Make predictions
-predictions = model.predict(X_test)
-predictions = scaler.inverse_transform(np.concatenate((predictions, np.zeros((predictions.shape[0], len(features)-1))), axis=1))[:, 0]
-actual = scaler.inverse_transform(np.concatenate((y_test, np.zeros((y_test.shape[0], len(features)-1))), axis=1))[:, 0]
+    # Make predictions
+    predictions = model.predict(X_test)
+    predictions = scaler.inverse_transform(np.concatenate((predictions, np.zeros((predictions.shape[0], len(features)-1))), axis=1))[:, 0]
+    actual = scaler.inverse_transform(np.concatenate((y_test, np.zeros((y_test.shape[0], len(features)-1))), axis=1))[:, 0]
 
-# Plot results
-plot_dates = data.index[split+look_back:split+look_back+len(predictions)]
-plot_predictions(actual, predictions, plot_dates, symbol)
+    # Plot results
+    plot_dates = data.index[split+look_back:split+look_back+len(predictions)]
+    plot_predictions(actual, predictions, plot_dates, symbol)
 
-# Print performance metrics
-mse = mean_squared_error(actual, predictions)
-rmse = math.sqrt(mse)
-mae = mean_absolute_error(actual, predictions)
+    # Print performance metrics
+    mse = mean_squared_error(actual, predictions)
+    rmse = math.sqrt(mse)
+    mae = mean_absolute_error(actual, predictions)
 
-print(f"Mean Squared Error: {mse:.2f}")
-print(f"Root Mean Squared Error: {rmse:.2f}")
-print(f"Mean Absolute Error: {mae:.2f}")
+    print(f"Mean Squared Error: {mse:.2f}")
+    print(f"Root Mean Squared Error: {rmse:.2f}")
+    print(f"Mean Absolute Error: {mae:.2f}")
 
-# Predict next 5 days
-last_60_days = data[features].values[-60:]
-last_60_days_scaled = scaler.transform(last_60_days)
-X_predict = np.array([last_60_days_scaled])
-prediction = model.predict(X_predict)
-prediction = scaler.inverse_transform(np.concatenate((prediction, np.zeros((prediction.shape[0], len(features)-1))), axis=1))[:, 0]
+    # Predict next 5 days
+    last_60_days = data[features].values[-60:]
+    last_60_days_scaled = scaler.transform(last_60_days)
+    X_predict = np.array([last_60_days_scaled])
+    prediction = model.predict(X_predict)
+    prediction = scaler.inverse_transform(np.concatenate((prediction, np.zeros((prediction.shape[0], len(features)-1))), axis=1))[:, 0]
 
-print("\nPredictions for the next 5 days:")
-for i, price in enumerate(prediction[0]):
-    print(f"Day {i+1}: ${price:.2f}")
+    print("\nPredictions for the next 5 days:")
+    for i, price in enumerate(prediction[0]):
+        print(f"Day {i+1}: ${price:.2f}")
